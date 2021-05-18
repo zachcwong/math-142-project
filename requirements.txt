@@ -1,1 +1,4 @@
 pygame
+numpy
+cython
+matplotlib

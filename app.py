@@ -4,6 +4,21 @@ initial_fill_color = (255, 0, 255)
 
 
 def run(width, height, caption, render_cb=None):
+    #
+    # Validating params:
+    #
+
+    if render_cb is None:
+        # re-defining render_cb to overwrite previous,
+        # un-callable definition.
+        # - this way, we do not branch each loop iteration.
+        def render_cb(screen):
+            pass
+
+    #
+    # Running the app:
+    #
+
     pygame.init()
     pygame.display.set_caption(caption)
 
@@ -24,6 +39,7 @@ def run(width, height, caption, render_cb=None):
             # TODO: check for mouse input events
 
         # Rendering:
+        render_cb(screen)
         pygame.display.flip()
 
     pygame.quit()

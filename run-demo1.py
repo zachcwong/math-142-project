@@ -1,5 +1,9 @@
 #!/usr/bin/env python3.9
 
+"""
+This demo opens a dummy window.
+"""
+
 import app
 
 
@@ -9,4 +13,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
