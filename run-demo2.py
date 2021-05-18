@@ -29,15 +29,28 @@ def print_density_array(sim):
 
 
 def create_sim():
-    sim = fluids.simulator.Simulator(256, 1.0, 1.0)
+    sim = fluids.simulator.Simulator(
+        256, 1.0, 1.0
+    )
 
-    for x in range(100, 110):
-        for y in range(100, 110):
-            sim.add_density((x, y), 1.0)
-    #
-    # for x in range(100, 110):
-    #     for y in range(100, 110):
-    #         sim.add_velocity((x, y), (1.0, 1.0))
+    # enable slow-mo for debug:
+    sim.time_rate = 0.001
+
+    # adding a solid square of fluid with constant velocity
+    square_density = 1.0
+    square_x_velocity = 0.5
+    square_y_velocity = 0.5
+    square_x_offset = 100
+    square_y_offset = 100
+    square_size = 64
+
+    for x in range(square_x_offset, square_size + square_x_offset):
+        for y in range(square_y_offset, square_size + square_y_offset):
+            sim.add_density((x, y), square_density)
+
+    for x in range(square_x_offset, square_size + square_x_offset):
+        for y in range(square_y_offset, square_size + square_y_offset):
+            sim.add_velocity((x, y), (square_x_velocity, square_y_velocity))
 
     return sim
 
@@ -47,8 +60,8 @@ def main():
     sim = create_sim()
 
     def render_cb(screen):
-        # running K steps:
-        k = 0
+        # running K simulation steps:
+        k = 1
         for i in range(k):
             sim.step()
 
@@ -74,8 +87,11 @@ def main():
 
     app.run(256, 256, "demo-2", render_cb)
 
-    plt.quiver(sim.dump_vx_array(), sim.dump_vy_array())
-    plt.show()
+    # TODO: move this to config
+    display_quiver_plot_after_completion = False
+    if display_quiver_plot_after_completion:
+        plt.quiver(sim.dump_vx_array(), sim.dump_vy_array())
+        plt.show()
 
 
 if __name__ == "__main__":

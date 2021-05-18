@@ -3,8 +3,9 @@ Implements this module as a 'kernel' that can be used by the rest of the
 application.
 https://mikeash.com/pyblog/fluid-simulation-for-dummies.html
 """
-
+import ctypes
 from typing import *
+from ctypes import *
 
 import numpy as np
 
@@ -184,7 +185,7 @@ cdef (FluidGrid*) new_fg(int n, int diffusion, int viscosity, float dt):
     fg.diffusion = diffusion
     fg.viscosity = viscosity
 
-    voxel_count = n*n
+    voxel_count = fg.size * fg.size
 
     fg.density = <float*>calloc(voxel_count, sizeof(float))
     fg.vx = <float*>calloc(voxel_count, sizeof(float))
@@ -193,6 +194,8 @@ cdef (FluidGrid*) new_fg(int n, int diffusion, int viscosity, float dt):
     fg.density_prev = <float *> calloc(voxel_count, sizeof(float))
     fg.vx_prev = <float*>calloc(voxel_count, sizeof(float))
     fg.vy_prev = <float*>calloc(voxel_count, sizeof(float))
+
+    z = fg.vx_prev[0]
 
     return fg
 
@@ -255,33 +258,45 @@ cdef advance_fg_state_by_one_tick(FluidGrid* fg):
     density_step(fg, fg.density, fg.density_prev, fg.vx, fg.vy, fg.diffusion, fg.dt)
 
 
-cdef density_step(FluidGrid* fg, float* x, float* x0, float* u, float* v, float diff, float dt):
-    add_source(fg, x, x0, dt)
-    swap(&x0, &x)
-    diffuse(fg, 0, x, x0, diff, dt)
-    swap(&x0, &x)
-    advect(fg, 0, x, x0, u, v, dt)
-
-
 cdef velocity_step(FluidGrid* fg, float* u, float* v, float* u0, float* v0, float visc, float dt):
     add_source(fg, u, u0, dt)
     add_source(fg, v, v0, dt)
+    # print("VS: Add Source OK")
 
     swap(&u0, &u)
     diffuse(fg, 1, u, u0, visc, dt)
+    # print("VS: Diffuse 1 OK")
 
     swap(&v0, &v)
     diffuse(fg, 2, v, v0, visc, dt)
+    # print("VS: Diffuse 2 OK")
 
     project(fg, u, v, u0, v0)
+    # print("VS: Project 1 OK")
 
     swap(&u0, &u)
     swap(&v0, &v)
 
     advect(fg, 1, u, u0, u0, v0, dt)
+    # print("VS: Advect 1 OK")
     advect(fg, 2, v, v0, u0, v0, dt)
+    # print("VS: Advect 2 OK")
 
     project(fg, u, v, u0, v0)
+    # print("VS: Project 2 OK")
+
+
+cdef density_step(FluidGrid* fg, float* x, float* x0, float* u, float* v, float diff, float dt):
+    add_source(fg, x, x0, dt)
+    # print("DS: Add Source OK")
+
+    swap(&x0, &x)
+    diffuse(fg, 0, x, x0, diff, dt)
+    # print("DS: Diffuse 1 OK")
+
+    swap(&x0, &x)
+    advect(fg, 0, x, x0, u, v, dt)
+    # print("DS: Diffuse 2 OK")
 
 
 cdef inline add_source(FluidGrid* fg, float* x, float* s, float dt):
@@ -290,22 +305,28 @@ cdef inline add_source(FluidGrid* fg, float* x, float* s, float dt):
 
 
 cdef inline swap(float** xp, float** yp):
+    # ptrs = <int>xp[0], <int>yp[0]
+    # print(f"Swap Start: {ptrs}")
+
     tmp = <float*>(xp[0])
-    xp[0] = yp[0]
-    yp[0] = tmp
+    xp[0] = <float*>(yp[0])
+    yp[0] = <float*>tmp
+
+    # ptrs = <int>xp[0], <int>yp[0]
+    # print(f"Swap End: {ptrs}")
 
 
-cdef inline set_bnd(FluidGrid* fg, int n, int b, float* x):
+cdef inline set_boundary_cells(FluidGrid* fg, int n, int b, float* x):
     for i in range(1, 1+n):
-        x[ix(fg, 0, i)] = -x[ix(fg, 1, i)] if b == 1 else x[ix(fg, 1, i)]
-        x[ix(fg, n + 1, i)] = -x[ix(fg, n, i)] if b == 1 else x[ix(fg, n, i)]
-        x[ix(fg, i, 0)] = -x[ix(fg, i, 1)] if b == 2 else x[ix(fg, i, 1)]
-        x[ix(fg, i, n + 1)] = -x[ix(fg, i, n)] if b == 2 else x[ix(fg, i, n)]
+        x[ix(fg, 0, i)] = (-x[ix(fg, 1, i)]) if b == 1 else (x[ix(fg, 1, i)])
+        x[ix(fg, n+1, i)] = (-x[ix(fg, n, i)]) if b == 1 else (x[ix(fg, n, i)])
+        x[ix(fg, i, 0)] = (-x[ix(fg, i, 1)]) if b == 2 else (x[ix(fg, i, 1)])
+        x[ix(fg, i, n+1)] = (-x[ix(fg, i, n)]) if b == 2 else (x[ix(fg, i, n)])
 
     x[ix(fg, 0, 0)] = 0.5 * (x[ix(fg, 1, 0)] + x[ix(fg, 0, 1)])
-    x[ix(fg, 0, n + 1)] = 0.5 * (x[ix(fg, 1, n + 1)] + x[ix(fg, 0, n)])
-    x[ix(fg, n + 1, 0)] = 0.5 * (x[ix(fg, n, 0)] + x[ix(fg, n + 1, 1)])
-    x[ix(fg, n + 1, n + 1)] = 0.5 * (x[ix(fg, n, n + 1)] + x[ix(fg, n + 1, n)])
+    x[ix(fg, 0, n+1)] = 0.5 * (x[ix(fg, 1, n + 1)] + x[ix(fg, 0, n)])
+    x[ix(fg, n+1, 0)] = 0.5 * (x[ix(fg, n, 0)] + x[ix(fg, n + 1, 1)])
+    x[ix(fg, n+1, n+1)] = 0.5 * (x[ix(fg, n, n + 1)] + x[ix(fg, n + 1, n)])
 
 
 cdef diffuse(FluidGrid* fg, int b, float* x, float* x0, float diff, float dt):
@@ -322,18 +343,17 @@ cdef diffuse(FluidGrid* fg, int b, float* x, float* x0, float diff, float dt):
     a = dt * diff * n * n
 
     for k in range(0, solver_iter_count):
-        for i in range(1, 1+fg.size):
-            for j in range(1, 1+fg.size):
-                x[ix(fg, i, j)] = (
-                    x0[ix(fg, i, j)]
-                    + (a / (1 + 4*a)) * (
-                        + x0[ix(fg, i - 1, j)]
-                        + x0[ix(fg, i + 1, j)]
-                        + x0[ix(fg, i, j - 1)]
-                        + x0[ix(fg, i, j + 1)]
+        for i in range(1, 1+fg.n):
+            for j in range(1, 1+fg.n):
+                x[ix(fg, i, j)] = (1 / (1 + 4*a)) * (
+                    x0[ix(fg, i, j)] + a * (
+                        + x[ix(fg, i - 1, j)]
+                        + x[ix(fg, i + 1, j)]
+                        + x[ix(fg, i, j - 1)]
+                        + x[ix(fg, i, j + 1)]
                     )
                 )
-        set_bnd(fg, n, b, x)
+        set_boundary_cells(fg, n, b, x)
 
 
 cdef advect(FluidGrid* fg, int b, float* d, float* d0, float* u, float* v, float dt):
@@ -352,20 +372,20 @@ cdef advect(FluidGrid* fg, int b, float* d, float* d0, float* u, float* v, float
             x = i - dt0*u[ix(fg, i, j)]
             y = j - dt0*v[ix(fg, i, j)]
 
-            print(f"{x}, {y}")
+            # print(f"({i}, {j}) = {x, y}")
 
             if x < 0.5:
                 x = 0.5
             if x > n + 0.5:
                 x = n + 0.5
-            i0 = int(x)
+            i0 = <int>x
             i1 = 1 + i0
 
             if y < 0.5:
                 y = 0.5
             if y > n + 0.5:
                 y = n + 0.5
-            j0 = int(y)
+            j0 = <int>y
             j1 = 1 + j0
 
             s1 = x - i0
@@ -378,7 +398,7 @@ cdef advect(FluidGrid* fg, int b, float* d, float* d0, float* u, float* v, float
                 s1 * (t0 * d0[ix(fg, i1, j0)] + t1*d0[ix(fg, i1, j1)])
             )
 
-    set_bnd(fg, n, b, d)
+    set_boundary_cells(fg, n, b, d)
 
 
 cdef project(FluidGrid* fg, float* u, float* v, float* p, float* div):
@@ -392,27 +412,29 @@ cdef project(FluidGrid* fg, float* u, float* v, float* p, float* div):
 
     for i in range(1, n+1):
         for j in range(1, n+1):
-            div[ix(fg, i, j)] = -0.5 * h * (
-                u[ix(fg, i+1, j)] - u[ix(fg, i-1, j)] +
-                v[ix(fg, i, j+1)] - v[ix(fg, i, j-1)]
+            div[ix(fg, i, j)] = (-0.5 * h) * (
+                + u[ix(fg, i+1, j)] - u[ix(fg, i-1, j)]
+                + v[ix(fg, i, j+1)] - v[ix(fg, i, j-1)]
             )
-    set_bnd(fg, n, 0, div)
-    set_bnd(fg, n, 0, p)
+            p[ix(fg, i, j)] = 0
+
+    set_boundary_cells(fg, n, 0, div)
+    set_boundary_cells(fg, n, 0, p)
 
     for k in range(20):
         for i in range(1, n+1):
             for j in range(1, n+1):
-                p[ix(fg, i, j)] = 0.25 * (
-                    + div[ix(fg, i, j)] + p[ix(fg, i-1, j)]
+                p[ix(fg, i, j)] = (1/4) * (
+                    + div[ix(fg, i, j)]
+                    + p[ix(fg, i-1, j)] + p[ix(fg, i+1, j)]
                     + p[ix(fg, i, j-1)] + p[ix(fg, i, j+1)]
                 )
-
-        set_bnd(fg, n, 0, p)
+        set_boundary_cells(fg, n, 0, p)
 
     for i in range(1, n+1):
         for j in range(1, n+1):
             u[ix(fg, i, j)] -= (0.5/h) * (p[ix(fg, i+1, j)] - p[ix(fg, i-1, j)])
             v[ix(fg, i, j)] -= (0.5/h) * (p[ix(fg, i, j+1)] - p[ix(fg, i, j-1)])
 
-    set_bnd(fg, n, 1, u)
-    set_bnd(fg, n, 2, v)
+    set_boundary_cells(fg, n, 1, u)
+    set_boundary_cells(fg, n, 2, v)
